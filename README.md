@@ -179,4 +179,4 @@ dotnet run --project "Server~/samples/Geuneda.Coupon.SampleServer" --no-launch-p
   - 성공 판정: 레퍼런스는 HTTP 상태를 보지 않고 `code == "SUCCESS"` 하나만 봅니다. SpellDefense 는 서버가 성공에도 `success=false` 를 내려 지급 내역 유무로 판정합니다. 여기서는 결과 코드 하나와 HTTP 200 + 캠페인 ID 를 요구합니다.
   - 제한 시간과 결과를 모를 때의 재시도: 레퍼런스는 제한 시간이 없습니다. 여기서는 제한 시간이 있고, 같은 코드를 다시 보내면 처음 지급 결과가 옵니다.
   - 무작위 대입 방지(계정별 실패 제한)와 사용 기록·지급의 한 트랜잭션: 서버 쪽이라 레퍼런스 클라이언트에서는 확인할 수 없는 부분입니다.
-- 웹 페이지 쿠폰(JS 커맨드 `useCoupon`·`requestPlayerData`)은 웹뷰 패키지에서 다룹니다.
+- 웹 페이지 쿠폰은 `com.geuneda.webview` 의 `coupon.redeem` 명령이 이 서비스로 보냅니다. 페이지에 계정 토큰을 넘기지 않으므로 레퍼런스의 `requestPlayerData` 는 두지 않습니다.
