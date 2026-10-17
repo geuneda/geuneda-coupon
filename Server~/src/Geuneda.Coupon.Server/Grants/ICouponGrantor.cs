@@ -10,6 +10,10 @@ namespace Geuneda.Coupon.Server
 	/// <remarks>
 	/// <para>같은 계정·캠페인으로는 한 번만 성공합니다. 저장소가 이미 기록한 사용이면 부르지 않습니다. 동시 요청 경쟁으로 롤백되면 한 요청에서 다시 불릴 수 있습니다.</para>
 	/// <para>
+	/// 트랜잭션 밖의 부작용(외부 API 호출, 메모리 상태, 메시지 발행, 다른 DB 쓰기)은 롤백되지 않습니다. 지급 호출은 롤백될 수 있으므로(한도 경쟁, 저장소의 다시 판정)
+	/// 이런 일은 같은 트랜잭션에 넣은 아웃박스 행 등으로 커밋 뒤에 합니다. 트랜잭션에 참여하는 예시는 패키지의 <c>docs/db-store.md</c> 입니다.
+	/// </para>
+	/// <para>
 	/// 계정 조건(레벨, 가입일 등)은 여기서 <see cref="CouponGrantResult.Rejected"/> 로 거절합니다. <see cref="CouponGrantResult.Rejected"/>·<see cref="CouponGrantResult.RetryLater"/> 를 돌려주거나
 	/// 예외를 던지면 기록하지 않습니다(트랜잭션 롤백). 예외는 잡지 않아 HTTP 500 이 됩니다.
 	/// </para>

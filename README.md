@@ -97,7 +97,7 @@ switch (result.Code)
 using Geuneda.Coupon.Server;
 
 builder.Services.AddGeunedaCoupon(options => options.MaxFailures = 10)   // 기본: 1시간에 실패 10번이면 잠금
-    .AddStore<DbCouponStore>()            // 게임 DB 저장소(요청 범위). 개발은 .AddInMemoryStore()
+    .AddStore<DbCouponStore>()            // 게임 DB 저장소(요청 범위, 예시 docs/db-store.md). 개발은 .AddInMemoryStore()
     .AddGrantor<WalletGrantor>()          // 게임 지급자(요청 범위, 저장소와 같은 트랜잭션)
     .AddAttemptStore<RedisAttemptStore>() // 서버가 여러 대면 공유 실패 기록(기본 메모리)
     .AddContextResolver<CdnCountryResolver>();   // 선택: 국가·플랫폼을 서버 값으로
@@ -118,6 +118,7 @@ app.MapGeunedaCoupon("/coupons", async context =>
 운영 도구가 `CouponAdmin`(요청 범위)으로 넣습니다. 관리자 인증은 운영 도구 쪽 일입니다.
 
 ```csharp
+await using var scope = app.Services.CreateAsyncScope();   // 비동기 해제: IAsyncDisposable 만 구현한 요청 범위 DB 세션도 받음
 var admin = scope.ServiceProvider.GetRequiredService<CouponAdmin>();
 
 // 공용 코드: 모두가 같은 코드, 계정당 한 번, 전체 한도는 선택
@@ -147,12 +148,16 @@ await admin.UpdateCampaignAsync(new CouponCampaign("welcome-2026", CouponKind.Sh
 
 ### 저장소 구현
 
-`ICouponStore` 의 XML 문서에 표 구성과 동시성 규칙이 있습니다. 요점:
+`ICouponStore` 의 XML 문서에 표 구성과 동시성 규칙이 있고, Postgres·Redis 로 구현한 전체 예시와 실제 DB 동시 요청 시험 결과는 [docs/db-store.md](docs/db-store.md) 입니다. 요점:
 
-- 캠페인 표(ID 유일, 공용 코드 유일), 개별 코드 표(코드 유일, 쓴 계정), 사용 기록 표((캠페인 ID, 계정 ID) 유일, 지급 결과 JSON).
-- 경쟁마다 막는 수단이 다릅니다. **유일 제약은 같은 계정의 중복만 막습니다.** 서로 다른 계정이 마지막 한도를 다투면 둘의 기록은 키가 달라 둘 다 들어가므로, 전체 한도는 캠페인 행 잠금이나 `used < max` 조건부 원자 증가로, 개별 코드는 코드 행 잠금이나 `used_by IS NULL` 조건부 갱신으로 막습니다. 조건부 갱신이 실패하면 게임 지급까지 전부 롤백합니다.
-- 롤백 뒤 다시 판정하면 지급자가 한 요청에서 여러 번 불릴 수 있어, 게임 쓰기는 모두 그 트랜잭션 안이어야 합니다.
-- 실패 기록(`ICouponAttemptStore`)은 계정마다 배타적으로 세고 넣어야 합니다(DB 계정 행 잠금, Redis Lua 스크립트).
+- 캠페인 표(ID 유일, 공용 코드 유일, 사용 수), 개별 코드 표(코드 유일, 쓴 계정), 사용 기록 표((캠페인 ID, 계정 ID) 유일, 지급 결과 JSON 은 `text`).
+- **사용 기록 자리를 먼저 차지합니다.** 기록 `INSERT ... ON CONFLICT DO NOTHING` → 개별 코드 `used_by IS NULL` 조건부 갱신 → 사용 수 `used < max` 조건부 증가 → 지급 → 지급 결과 기록 → 커밋입니다. 같은 계정의 동시 요청은 첫 단계에서 줄을 서고 앞 요청의 기록(처음 결과)을 받습니다. 유일 제약은 같은 계정의 중복만 막고, 서로 다른 계정이 마지막 한도나 같은 개별 코드를 다투는 경쟁은 조건부 갱신이 막습니다.
+- 기록을 맨 뒤에 넣는 순서라면 조건부 갱신이 0행일 때 이 계정의 기록을 다시 읽어 있으면 `Duplicate` 로 돌려줍니다. 바로 `SoldOut`·`CodeUsed` 로 끝내면 이미 받은 계정이 처음 결과 대신 코드 실패를 받고 실패 제한에도 셉니다(실제 Postgres 에서 같은 계정 50개 동시 요청 중 4~17개).
+- 지급자는 저장소와 같은 요청 범위 DB 세션을 받아 저장소가 연 트랜잭션으로만 씁니다. 지급 호출은 롤백될 수 있고 트랜잭션 밖 부작용(외부 API, 메모리 상태)은 되돌아가지 않으므로 그런 일은 커밋 뒤로 미룹니다.
+- 공용·개별 코드의 한 이름 공간은 두 표의 유일 제약만으로 지켜지지 않습니다. 등록을 잠금으로 줄 세우거나 코드 하나를 키로 하는 표를 둡니다.
+- Postgres 에서 사용 기록이 캠페인 행을 외래 키로 참조하면 사용 수 갱신과 지급 실패 롤백이 겹칠 때 내부 오류(`new multixact has more than one updating member`, 500)가 날 수 있어 예시는 외래 키를 두지 않습니다. 지급 시각은 저장한 값(`RETURNING`)을 돌려줍니다.
+- 실패 기록(`ICouponAttemptStore`)은 계정마다 배타적으로 세고 넣어야 합니다(Postgres 권고 잠금, Redis Lua 스크립트). 진행 중 요청도 한도에 들어가므로 한 계정이 한도보다 많은 요청을 동시에 보내면 일부는 429 입니다.
+- 켜짐·기간·조건은 트랜잭션 밖에서 읽은 캠페인으로 판정합니다. 운영자가 끈 직후에도 이미 판정을 지난 요청은 지급됩니다.
 - `InMemoryCouponStore`·`InMemoryCouponAttemptStore` 는 개발·테스트용입니다(다시 시작하면 사라짐, 서버 한 대). **메모리 저장소는 지급을 롤백하지 않습니다.** 지급이 실패하면 사용 기록을 넣지 않을 뿐이라, 지급자가 상태를 바꾼 뒤 예외를 던지면 바뀐 상태가 남습니다.
 
 ### 대상 조건의 근거

@@ -16,7 +16,7 @@ builder.Services.AddGeunedaCoupon(options => options.MaxFailures = 5)
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
+await using (var scope = app.Services.CreateAsyncScope())
 {
 	var admin = scope.ServiceProvider.GetRequiredService<CouponAdmin>();
 	await admin.AddCampaignAsync(new CouponCampaign("welcome", CouponKind.Shared, "WELCOME2026", "100"));

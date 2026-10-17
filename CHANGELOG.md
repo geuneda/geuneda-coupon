@@ -4,6 +4,14 @@
 이 형식은 [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)를 기반으로 하며,
 이 프로젝트는 [Semantic Versioning](http://semver.org/spec/v2.0.0.html)을 따릅니다.
 
+## [0.1.1] - 2026-10-17
+
+**Changed**:
+- 실제 DB 저장소 안내 `docs/db-store.md`: Postgres 표(사용 처리가 갱신하는 캠페인 행을 외래 키로 참조하지 않음), 지급자가 같은 트랜잭션에 참여하는 요청 범위 세션, 사용 기록 자리를 먼저 차지하는 `ICouponStore` 전체 구현, 기록을 맨 뒤에 넣는 순서의 0행 재확인, 사용 수를 지급 전·뒤에 늘리는 맞바꿈, 공용·개별 코드 이름 공간, 실패 기록 Postgres(권고 잠금)·Redis(Lua 와 정렬 집합) 구현, 운영 주의(Postgres 18 multixact 오류, 진행 중 요청과 실패 한도, 트랜잭션 밖 켜짐·기간 판정). 문서의 SQL·C# 를 그대로 뽑아 Postgres 18.3·Redis 8.10 동시 요청 시험으로 확인
+- `ICouponStore`·`ICouponGrantor`·`ICouponAttemptStore` 문서와 README: 권장 순서(기록 자리 먼저)와, 조건부 갱신 0행을 바로 `CodeUsed`·`SoldOut` 으로 끝내면 같은 계정의 동시 요청이 처음 결과 대신 코드 실패를 받고 실패 제한에도 세는 경쟁, 저장한 지급 시각 돌려주기, 지급자의 트랜잭션 밖 부작용
+- 테스트 `ConcurrentRequests_GrantOnce` 가 지급자 호출 수 대신 결과 코드, 처음 결과(지급 JSON·시각), 확정된 지급(`CouponTestServer.CommittedGrants`), 기록 수를 보고, 마지막 한도와 같은 개별 코드에서 같은 계정의 동시 요청이 `AlreadyRedeemed` 인지 확인. 저장소 데코레이터(`ProbedCouponStore`)로 모든 요청이 저장소 사용 처리에 들어온 뒤 지급을 풀어 경쟁을 반드시 거침(실제 DB 저장소에도 그대로 쓰는 계약 시험)
+- 테스트 서버·샘플 서버·README 의 범위를 `await using ... CreateAsyncScope()` 로(동기 해제는 `IAsyncDisposable` 만 구현한 요청 범위 DB 세션에서 예외)
+
 ## [0.1.0] - 2026-10-17
 
 **New**:

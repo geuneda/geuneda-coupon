@@ -44,6 +44,15 @@ namespace Geuneda.Coupon.Server.Tests
 		public TestGrantor Grantor => _app.Services.GetRequiredService<TestGrantor>();
 		public InMemoryCouponStore Store => _app.Services.GetRequiredService<InMemoryCouponStore>();
 
+		/// <summary>
+		/// 확정된 지급 수(캠페인, 계정)입니다. 메모리 저장소는 지급을 롤백하지 않으므로 지급자가 Granted 를 돌려준 수가 곧 확정 지급입니다.
+		/// 실제 DB 저장소로 이 시험을 돌릴 때는 지급자가 같은 트랜잭션에 쓴 지급 원장의 행 수로 바꿉니다(롤백된 호출은 세지 않음).
+		/// </summary>
+		public int CommittedGrants(string campaignId, string accountId)
+		{
+			return Grantor.GrantedCount(campaignId, accountId);
+		}
+
 		public static async Task<CouponTestServer> StartAsync(Action<CouponServerOptions> options = null, Action<CouponServerBuilder> configure = null)
 		{
 			var time = new FakeTimeProvider(Start);
@@ -74,7 +83,7 @@ namespace Geuneda.Coupon.Server.Tests
 		/// <summary>운영 입구로 캠페인을 넣습니다.</summary>
 		public async Task AddAsync(CouponCampaign campaign, params string[] codes)
 		{
-			using var scope = _app.Services.CreateScope();
+			await using var scope = _app.Services.CreateAsyncScope();
 			var admin = scope.ServiceProvider.GetRequiredService<CouponAdmin>();
 			Assert.Equal(CouponAddResult.Added, await admin.AddCampaignAsync(campaign));
 
@@ -86,7 +95,7 @@ namespace Geuneda.Coupon.Server.Tests
 
 		public async Task<T> AdminAsync<T>(Func<CouponAdmin, Task<T>> action)
 		{
-			using var scope = _app.Services.CreateScope();
+			await using var scope = _app.Services.CreateAsyncScope();
 			return await action(scope.ServiceProvider.GetRequiredService<CouponAdmin>());
 		}
 
@@ -129,10 +138,19 @@ namespace Geuneda.Coupon.Server.Tests
 	/// </summary>
 	internal sealed class TestGrantor : ICouponGrantor
 	{
+		private readonly ConcurrentDictionary<(string CampaignId, string AccountId), int> _granted =
+			new ConcurrentDictionary<(string CampaignId, string AccountId), int>();
+
 		public readonly ConcurrentQueue<CouponGrant> Calls = new ConcurrentQueue<CouponGrant>();
 		public Func<CouponGrant, CouponGrantResult> Next;
 		public Exception Throw;
 		public TaskCompletionSource Gate;
+
+		/// <summary><see cref="CouponGrantStatus.Granted"/> 를 돌려준 수(캠페인, 계정)입니다.</summary>
+		public int GrantedCount(string campaignId, string accountId)
+		{
+			return _granted.TryGetValue((campaignId, accountId), out var count) ? count : 0;
+		}
 
 		public async Task<CouponGrantResult> GrantAsync(CouponGrant grant, CancellationToken cancellationToken)
 		{
@@ -148,7 +166,14 @@ namespace Geuneda.Coupon.Server.Tests
 				throw Throw;
 			}
 
-			return Next != null ? Next(grant) : CouponGrantResult.Granted(new { gems = grant.Campaign.Reward, account = grant.AccountId });
+			var result = Next != null ? Next(grant) : CouponGrantResult.Granted(new { gems = grant.Campaign.Reward, account = grant.AccountId });
+
+			if (result.Status == CouponGrantStatus.Granted)
+			{
+				_granted.AddOrUpdate((grant.Campaign.Id, grant.AccountId), 1, (_, count) => count + 1);
+			}
+
+			return result;
 		}
 	}
 

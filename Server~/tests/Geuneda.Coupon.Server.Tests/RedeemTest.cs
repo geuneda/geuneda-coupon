@@ -3,6 +3,7 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -388,22 +389,67 @@ namespace Geuneda.Coupon.Server.Tests
 		[Fact]
 		public async Task ConcurrentRequests_GrantOnce()
 		{
-			await using var server = await CouponTestServer.StartAsync();
-			await server.AddAsync(Shared());
-			await server.AddAsync(Unique(), "UNIQUE0001");
+			// 저장소 계약: 같은 계정의 동시 요청은 마지막 한도·같은 개별 코드에서도 처음 결과(AlreadyRedeemed)이고, 다른 계정끼리는 개별 코드 하나를 한 번만 쓴다.
+			// 지급자 호출 수는 단정하지 않는다(경쟁으로 롤백한 뒤 다시 판정하는 저장소는 더 부를 수 있음, ICouponStore). 확정된 지급과 기록만 센다
+			var probe = new RedeemProbe();
+			await using var server = await CouponTestServer.StartAsync(configure: coupon => ProbedCouponStore.Decorate(coupon, probe));
+			await server.AddAsync(Shared(max: 1));
+			await server.AddAsync(Unique(), "UNIQUE0001", "UNIQUE0002");
+
+			// 마이크로초로 나누어떨어지지 않는 시각: 저장한 시각(DB 정밀도)을 돌려주지 않는 저장소는 처음 응답과 재요청의 시각이 달라진다
+			server.Time.Advance(TimeSpan.FromTicks(1234567));
 			server.Grantor.Gate = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+			Task<(HttpResponseMessage Http, CouponRedeemResponse<JsonElement?> Body)>[] sameAccount, sameCode, sameAccountSameCode;
 
-			var sameAccount = new[] { server.RedeemAsync("a", "WELCOME2026"), server.RedeemAsync("a", "WELCOME2026") };
-			var sameCode = new[] { server.RedeemAsync("b", "UNIQUE0001"), server.RedeemAsync("c", "UNIQUE0001") };
-			await Task.Delay(200);
-			server.Grantor.Gate.SetResult();
+			try
+			{
+				sameAccount = new[] { server.RedeemAsync("a", "WELCOME2026"), server.RedeemAsync("a", "WELCOME2026") };
+				sameCode = new[] { server.RedeemAsync("b", "UNIQUE0001"), server.RedeemAsync("c", "UNIQUE0001") };
+				sameAccountSameCode = new[] { server.RedeemAsync("d", "UNIQUE0002"), server.RedeemAsync("d", "UNIQUE0002") };
 
-			var accountCodes = (await Task.WhenAll(sameAccount)).Select(result => result.Body.Code.Value).OrderBy(code => code).ToArray();
-			var codeCodes = (await Task.WhenAll(sameCode)).Select(result => result.Body.Code.Value).OrderBy(code => code).ToArray();
+				// 모든 요청이 이전 사용 확인을 지나 저장소 사용 처리에 들어온 뒤에 지급을 푼다(앞 요청은 지급자에서 기다림)
+				await WaitUntilAsync(() => probe.Entered("welcome", "a") == 2 && probe.Entered("launch", "b") + probe.Entered("launch", "c") == 2 &&
+				                           probe.Entered("launch", "d") == 2 && !server.Grantor.Calls.IsEmpty);
+			}
+			finally
+			{
+				server.Grantor.Gate.TrySetResult();
+			}
 
-			Assert.Equal(new[] { 0, CouponResultCodes.AlreadyRedeemed }, accountCodes);
-			Assert.Equal(new[] { 0, CouponResultCodes.CodeUsed }, codeCodes);
-			Assert.Equal(2, server.Grantor.Calls.Count);
+			var accountBodies = (await Task.WhenAll(sameAccount)).Select(result => result.Body).ToArray();
+			var codeBodies = (await Task.WhenAll(sameCode)).Select(result => result.Body).ToArray();
+			var accountCodeBodies = (await Task.WhenAll(sameAccountSameCode)).Select(result => result.Body).ToArray();
+
+			Assert.Equal(new[] { 0, CouponResultCodes.AlreadyRedeemed }, accountBodies.Select(body => body.Code.Value).OrderBy(code => code));
+			Assert.Equal(new[] { 0, CouponResultCodes.CodeUsed }, codeBodies.Select(body => body.Code.Value).OrderBy(code => code));
+			Assert.Equal(new[] { 0, CouponResultCodes.AlreadyRedeemed }, accountCodeBodies.Select(body => body.Code.Value).OrderBy(code => code));
+			AssertSameFirstResult(accountBodies);
+			AssertSameFirstResult(accountCodeBodies);
+
+			// 확정된 지급: 같은 계정은 한 번, 개별 코드는 한 계정만
+			Assert.Equal(1, server.CommittedGrants("welcome", "a"));
+			Assert.Equal(1, server.CommittedGrants("launch", "b") + server.CommittedGrants("launch", "c"));
+			Assert.Equal(1, server.CommittedGrants("launch", "d"));
+			Assert.Equal(1, server.Store.GetRedemptionCount("welcome"));
+			Assert.Equal(2, server.Store.GetRedemptionCount("launch"));
+		}
+
+		/// <summary>두 응답이 같은 처음 지급 결과(지급 JSON, 시각)인지입니다.</summary>
+		private static void AssertSameFirstResult(CouponRedeemResponse<JsonElement?>[] bodies)
+		{
+			Assert.Equal(bodies[0].Grant.Value.GetRawText(), bodies[1].Grant.Value.GetRawText());
+			Assert.NotNull(bodies[0].RedeemedAt);
+			Assert.Equal(bodies[0].RedeemedAt, bodies[1].RedeemedAt);
+		}
+
+		private static async Task WaitUntilAsync(Func<bool> condition)
+		{
+			for (var i = 0; i < 1000 && !condition(); i++)
+			{
+				await Task.Delay(10);
+			}
+
+			Assert.True(condition(), "Concurrent requests did not reach the store in time");
 		}
 	}
 }
