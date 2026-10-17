@@ -1,0 +1,17 @@
+{
+  "name": "com.geuneda.coupon",
+  "displayName": "Geuneda Coupon",
+  "author": "geuneda",
+  "version": "0.1.0",
+  "unity": "2021.3",
+  "license": "MIT",
+  "description": "쿠폰 사용입니다. 클라이언트는 코드를 다듬어(공백·- 제거, 대문자) 서버에 보내고 지급 결과를 게임 형식으로 돌려받으며, 이미 쓴 캠페인은 처음 지급 결과와 함께 성공(AlreadyRedeemed)으로 받습니다. 보상은 서버가 지급합니다. ASP.NET Core 서버 라이브러리(Server~)가 공용 코드(계정당 한 번, 전체 한도)와 개별 일회용 코드(코드당 한 번, 캠페인당 계정 하나), 기간·켜짐, 대상 조건(플랫폼·국가·최소 앱 버전, 서버 맥락 해석기), 계정별 실패 제한(무작위 대입 방지, 429)을 판정하고, 사용 기록과 게임 지급을 저장소의 한 트랜잭션으로 묶습니다.",
+  "type": "library",
+  "hideInEditor": false,
+  "dependencies": {
+    "com.geuneda.core": "0.4.0",
+    "com.geuneda.http": "0.1.0",
+    "com.cysharp.unitask": "2.5.10",
+    "com.unity.nuget.newtonsoft-json": "3.2.1"
+  }
+}

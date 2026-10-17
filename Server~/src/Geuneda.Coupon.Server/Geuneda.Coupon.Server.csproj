@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- ASP.NET Core 쿠폰 서버 라이브러리. 요청·응답 DTO, 결과 코드, 코드 규칙은 Unity 패키지(Runtime/Protocol)의 것을 링크해 한 곳에서 관리한다 -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Geuneda.Coupon.Server</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Geuneda.Coupon.Server.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup Label="Unity 패키지와 공유">
+    <Compile Include="$(CouponPackageDir)Runtime/Protocol/*.cs" LinkBase="Shared/Protocol" />
+  </ItemGroup>
+</Project>

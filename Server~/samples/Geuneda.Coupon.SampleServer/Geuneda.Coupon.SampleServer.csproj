@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+  <!-- 메모리 저장소와 샘플 지갑을 쓰는 샘플 쿠폰 서버. Unity 상호 운용 테스트(Tests/EditMode/SampleServerInteropTest)가 이 서버에 붙는다 -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Geuneda.Coupon.SampleServer</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/Geuneda.Coupon.Server/Geuneda.Coupon.Server.csproj" />
+  </ItemGroup>
+</Project>

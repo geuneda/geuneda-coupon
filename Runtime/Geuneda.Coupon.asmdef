@@ -1,0 +1,18 @@
+{
+    "name": "Geuneda.Coupon",
+    "rootNamespace": "Geuneda.Coupon",
+    "references": [
+        "Geuneda.Core",
+        "Geuneda.Http",
+        "UniTask"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

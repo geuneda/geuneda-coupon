@@ -1,0 +1,13 @@
+<Project>
+  <!--
+    Server~ 아래 모든 .NET 프로젝트의 공통 설정. Unity 패키지의 Runtime/Protocol 소스를 링크하므로 Unity 와 같은 C# 9 로 컴파일해
+    공유 소스에 Unity 가 못 읽는 문법이 들어오지 않게 하고, nullable 은 끈다
+  -->
+  <PropertyGroup>
+    <LangVersion>9.0</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <CouponPackageDir>$(MSBuildThisFileDirectory)../</CouponPackageDir>
+  </PropertyGroup>
+</Project>

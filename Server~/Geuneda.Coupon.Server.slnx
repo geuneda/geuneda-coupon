@@ -1,0 +1,11 @@
+<Solution>
+  <Folder Name="/samples/">
+    <Project Path="samples/Geuneda.Coupon.SampleServer/Geuneda.Coupon.SampleServer.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/Geuneda.Coupon.Server/Geuneda.Coupon.Server.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Geuneda.Coupon.Server.Tests/Geuneda.Coupon.Server.Tests.csproj" />
+  </Folder>
+</Solution>
